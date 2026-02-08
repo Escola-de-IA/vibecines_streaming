@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "lastUpdate": "2026-02-07T10:00:00Z",
+  "grupos": [
+    {
+      "id": "filmes",
+      "titulo": "Filmes",
+      "partes": [
+        {
+          "arquivo": "filmes.m3u",
+          "offset": 0,
+          "count": 0
+        }
+      ]
+    },
+    {
+      "id": "series",
+      "titulo": "Séries",
+      "partes": [
+        {
+          "arquivo": "series1.m3u",
+          "offset": 0,
+          "count": 0
+        },
+        {
+          "arquivo": "series2.m3u",
+          "offset": 50000,
+          "count": 0
+        },
+        {
+          "arquivo": "series.m3u",
+          "offset": 100000,
+          "count": 0
+        }
+      ]
+    }
+  ]
+}
