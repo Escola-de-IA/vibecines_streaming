@@ -8,6 +8,9 @@ export interface M3UItem {
   category: string;
   url: string;
   source: 'movie' | 'series';
+  series?: string;   // Nome da série (ex: "The Last of Us")
+  season?: number;   // Número da temporada
+  episode?: number;  // Número do episódio
 }
 
 interface Parte {

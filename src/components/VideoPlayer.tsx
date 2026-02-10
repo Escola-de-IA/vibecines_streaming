@@ -40,6 +40,26 @@ const VideoPlayer = ({ url, title, onClose }: VideoPlayerProps) => {
   const hideTimeout = useRef<ReturnType<typeof setTimeout>>();
   const hlsRef = useRef<any>(null);
 
+  // 📱 Detectar se é mobile
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+  // 📱 ENTRAR FULLSCREEN AUTOMATICAMENTE NO MOBILE
+  useEffect(() => {
+    if (isMobile && containerRef.current && !isFullscreen) {
+      const enterFullscreen = async () => {
+        try {
+          await containerRef.current?.requestFullscreen();
+          setIsFullscreen(true);
+        } catch (err) {
+          console.log("Fullscreen não suportado ou bloqueado");
+        }
+      };
+      
+      // Delay para garantir que o componente está montado
+      setTimeout(enterFullscreen, 300);
+    }
+  }, [isMobile]);
+
   // 🔧 INICIALIZAR PLAYER COM TRATAMENTO ADEQUADO DE HLS
   useEffect(() => {
     const video = videoRef.current;
@@ -73,14 +93,13 @@ const VideoPlayer = ({ url, title, onClose }: VideoPlayerProps) => {
         console.log("✅ HLS: Manifest parseado", data);
         setIsLoading(false);
         
-        // Tentar reproduzir automaticamente
         video.play()
           .then(() => {
             console.log("✅ Reprodução automática iniciada");
             setPlaying(true);
           })
           .catch((err) => {
-            console.log("⚠️ Autoplay bloqueado pelo navegador:", err);
+            console.log("⚠️ Autoplay bloqueado:", err);
             setPlaying(false);
           });
       });
@@ -91,19 +110,16 @@ const VideoPlayer = ({ url, title, onClose }: VideoPlayerProps) => {
         if (data.fatal) {
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
-              console.error("Erro de rede, tentando recuperar...");
               setError("Erro de rede. Tentando reconectar...");
               hls.startLoad();
               break;
               
             case Hls.ErrorTypes.MEDIA_ERROR:
-              console.error("Erro de mídia, tentando recuperar...");
               setError("Erro de mídia. Tentando recuperar...");
               hls.recoverMediaError();
               break;
               
             default:
-              console.error("Erro fatal não recuperável");
               setError("Não foi possível reproduzir este vídeo");
               hls.destroy();
               setIsLoading(false);
@@ -127,21 +143,17 @@ const VideoPlayer = ({ url, title, onClose }: VideoPlayerProps) => {
       video.src = url;
       
       const handleLoadedMetadata = () => {
-        console.log("✅ Metadados carregados");
         setIsLoading(false);
         video.play()
           .then(() => {
-            console.log("✅ Reprodução automática iniciada");
             setPlaying(true);
           })
-          .catch((err) => {
-            console.log("⚠️ Autoplay bloqueado:", err);
+          .catch(() => {
             setPlaying(false);
           });
       };
 
       const handleError = () => {
-        console.error("❌ Erro ao carregar vídeo");
         setError("Erro ao carregar o vídeo");
         setIsLoading(false);
       };
@@ -160,21 +172,17 @@ const VideoPlayer = ({ url, title, onClose }: VideoPlayerProps) => {
       video.src = url;
       
       const handleLoadedMetadata = () => {
-        console.log("✅ Metadados carregados");
         setIsLoading(false);
         video.play()
           .then(() => {
-            console.log("✅ Reprodução automática iniciada");
             setPlaying(true);
           })
-          .catch((err) => {
-            console.log("⚠️ Autoplay bloqueado:", err);
+          .catch(() => {
             setPlaying(false);
           });
       };
 
       const handleError = () => {
-        console.error("❌ Erro ao carregar vídeo");
         setError("Erro ao carregar o vídeo");
         setIsLoading(false);
       };
@@ -195,32 +203,19 @@ const VideoPlayer = ({ url, title, onClose }: VideoPlayerProps) => {
     if (!video) return;
 
     const handleTimeUpdate = () => setCurrentTime(video.currentTime);
-    const handleDurationChange = () => {
-      console.log("⏱️ Duração definida:", video.duration);
-      setDuration(video.duration);
-    };
+    const handleDurationChange = () => setDuration(video.duration);
     const handleProgress = () => {
       if (video.buffered.length > 0) {
         setBuffered(video.buffered.end(video.buffered.length - 1));
       }
     };
-    const handleWaiting = () => {
-      console.log("⏳ Aguardando buffer...");
-      setIsLoading(true);
-    };
-    const handleCanPlay = () => {
-      console.log("✅ Pode reproduzir");
-      setIsLoading(false);
-    };
+    const handleWaiting = () => setIsLoading(true);
+    const handleCanPlay = () => setIsLoading(false);
     const handlePlaying = () => {
-      console.log("▶️ Reproduzindo");
       setPlaying(true);
       setIsLoading(false);
     };
-    const handlePause = () => {
-      console.log("⏸️ Pausado");
-      setPlaying(false);
-    };
+    const handlePause = () => setPlaying(false);
 
     video.addEventListener("timeupdate", handleTimeUpdate);
     video.addEventListener("durationchange", handleDurationChange);
@@ -336,19 +331,19 @@ const VideoPlayer = ({ url, title, onClose }: VideoPlayerProps) => {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center"
+        className="fixed inset-0 z-[100] bg-black flex items-center justify-center"
         onClick={onClose}
       >
         <div
           ref={containerRef}
-          className="relative w-full max-w-5xl aspect-video"
+          className="relative w-full h-full"
           onClick={(e) => e.stopPropagation()}
           onMouseMove={handleMouseMove}
           onMouseLeave={() => setShowControls(false)}
         >
           <video
             ref={videoRef}
-            className="w-full h-full bg-black rounded-lg"
+            className="w-full h-full bg-black"
             muted={muted}
             playsInline
             onClick={togglePlay}
@@ -356,19 +351,19 @@ const VideoPlayer = ({ url, title, onClose }: VideoPlayerProps) => {
 
           {/* Loading Spinner */}
           {isLoading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg">
-              <Loader2 className="w-12 h-12 text-primary animate-spin" />
+            <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+              <Loader2 className="w-12 h-12 md:w-16 md:h-16 text-primary animate-spin" />
             </div>
           )}
 
           {/* Error Message */}
           {error && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/80 rounded-lg">
-              <div className="text-center">
-                <p className="text-red-500 text-lg mb-4">{error}</p>
+            <div className="absolute inset-0 flex items-center justify-center bg-black/80">
+              <div className="text-center px-4">
+                <p className="text-red-500 text-base md:text-lg mb-4">{error}</p>
                 <button 
                   onClick={onClose}
-                  className="px-4 py-2 bg-primary rounded-lg hover:bg-primary/80"
+                  className="px-4 py-2 bg-primary rounded-lg hover:bg-primary/80 text-sm md:text-base"
                 >
                   Fechar
                 </button>
@@ -380,16 +375,16 @@ const VideoPlayer = ({ url, title, onClose }: VideoPlayerProps) => {
           <motion.div
             initial={false}
             animate={{ opacity: showControls ? 1 : 0 }}
-            className="absolute inset-0 flex flex-col justify-between p-4 pointer-events-none transition-opacity duration-300"
+            className="absolute inset-0 flex flex-col justify-between p-3 md:p-4 pointer-events-none transition-opacity duration-300"
           >
             {/* Top bar */}
             <div className="flex items-center justify-between pointer-events-auto">
-              <h3 className="text-foreground font-bold text-lg drop-shadow-lg">{title}</h3>
+              <h3 className="text-foreground font-bold text-sm md:text-lg drop-shadow-lg line-clamp-1">{title}</h3>
               <button 
                 onClick={onClose} 
                 className="w-10 h-10 rounded-full bg-background/50 flex items-center justify-center hover:bg-background/80 transition-colors"
               >
-                <X className="w-5 h-5 text-foreground" />
+                <X className="w-5 h-5 md:w-6 md:h-6 text-foreground" />
               </button>
             </div>
 
@@ -398,7 +393,7 @@ const VideoPlayer = ({ url, title, onClose }: VideoPlayerProps) => {
               {/* Progress bar */}
               <div 
                 ref={progressRef}
-                className="relative h-1 bg-white/30 rounded-full cursor-pointer group"
+                className="relative h-1 md:h-1.5 bg-white/30 rounded-full cursor-pointer group"
                 onClick={handleSeek}
               >
                 {/* Buffered */}
@@ -408,30 +403,30 @@ const VideoPlayer = ({ url, title, onClose }: VideoPlayerProps) => {
                 />
                 {/* Progress */}
                 <div 
-                  className="absolute h-full bg-primary rounded-full transition-all group-hover:h-1.5"
+                  className="absolute h-full bg-primary rounded-full transition-all group-hover:h-2"
                   style={{ width: `${progressPercentage}%` }}
                 >
                   <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-primary rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
                 </div>
               </div>
 
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 md:gap-4">
                 {/* Play/Pause */}
                 <button 
                   onClick={togglePlay} 
-                  className="w-10 h-10 rounded-full bg-primary flex items-center justify-center hover:scale-110 transition-transform"
+                  className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-primary flex items-center justify-center hover:scale-110 transition-transform"
                 >
                   {playing ? (
-                    <Pause className="w-5 h-5 text-primary-foreground" />
+                    <Pause className="w-4 h-4 md:w-5 md:h-5 text-primary-foreground" />
                   ) : (
-                    <Play className="w-5 h-5 text-primary-foreground fill-current" />
+                    <Play className="w-4 h-4 md:w-5 md:h-5 text-primary-foreground fill-current" />
                   )}
                 </button>
 
-                {/* Skip buttons */}
+                {/* Skip buttons - ocultar no mobile */}
                 <button 
                   onClick={() => skip(-10)}
-                  className="w-8 h-8 flex items-center justify-center hover:scale-110 transition-transform"
+                  className="hidden md:flex w-8 h-8 items-center justify-center hover:scale-110 transition-transform"
                   title="Voltar 10s"
                 >
                   <SkipBack className="w-5 h-5 text-foreground" />
@@ -439,19 +434,19 @@ const VideoPlayer = ({ url, title, onClose }: VideoPlayerProps) => {
 
                 <button 
                   onClick={() => skip(10)}
-                  className="w-8 h-8 flex items-center justify-center hover:scale-110 transition-transform"
+                  className="hidden md:flex w-8 h-8 items-center justify-center hover:scale-110 transition-transform"
                   title="Avançar 10s"
                 >
                   <SkipForward className="w-5 h-5 text-foreground" />
                 </button>
 
                 {/* Time */}
-                <div className="text-foreground text-sm font-medium">
+                <div className="text-foreground text-xs md:text-sm font-medium">
                   {formatTime(currentTime)} / {formatTime(duration)}
                 </div>
 
-                {/* Volume */}
-                <div className="flex items-center gap-2">
+                {/* Volume - ocultar no mobile */}
+                <div className="hidden md:flex items-center gap-2">
                   <button onClick={toggleMute}>
                     {muted || volume === 0 ? (
                       <VolumeX className="w-5 h-5 text-foreground" />
@@ -483,13 +478,6 @@ const VideoPlayer = ({ url, title, onClose }: VideoPlayerProps) => {
               </div>
             </div>
           </motion.div>
-
-          {/* No URL fallback */}
-          {!url && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black rounded-lg">
-              <p className="text-muted-foreground text-lg">Nenhum link de vídeo disponível</p>
-            </div>
-          )}
         </div>
       </motion.div>
     </AnimatePresence>

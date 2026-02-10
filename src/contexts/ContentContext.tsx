@@ -1,8 +1,21 @@
-// 🎯 CONTENT CONTEXT - Gerenciamento de Estado com Carregamento Progressivo
-// Mantém compatibilidade com sistema antigo (publishedMovies, publishedSeries)
+// 🎯 CONTENT CONTEXT - Gerenciamento Híbrido: Streaming + Admin
 
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo } from 'react';
 import { playlistLoader, M3UItem } from '@/services/PlaylistPayloader';
+import { useToast } from '@/hooks/use-toast';
+
+// --- Interfaces ---
+
+export interface EnrichedSeries {
+  seriesName: string;
+  normalizedName: string;
+  poster: string;
+  backdrop: string;
+  totalSeasons: number;
+  totalEpisodes: number;
+  episodes: M3UItem[];
+  seasons: { [key: number]: M3UItem[] };
+}
 
 interface Grupo {
   id: string;
@@ -10,85 +23,71 @@ interface Grupo {
   totalPartes: number;
 }
 
+interface PreviewData {
+  movies: M3UItem[];
+  series: any[]; // Usando any temporariamente para flexibilidade no worker
+}
+
 interface ContentContextType {
-  // Estado do índice
+  // 🔄 Estado de Leitura (Streaming)
   indexLoaded: boolean;
   indexVersion: number;
   grupos: Grupo[];
   
-  // Estado do grupo atual
   currentGrupo: string | null;
   currentParte: number;
-  items: M3UItem[];
+  items: M3UItem[]; // Itens brutos da paginação atual
   
-  // ✅ Compatibilidade com sistema antigo
+  // 🔍 Getters Computados (Compatibilidade com Pages)
   publishedMovies: M3UItem[];
-  publishedSeries: M3UItem[];
-  publishedContent: M3UItem[];
+  publishedSeries: EnrichedSeries[];
   
-  // Controles de carregamento
+  // ⚙️ Controles de Carregamento
   loadingIndex: boolean;
   loadingParte: boolean;
+  isLoading: boolean; // Alias geral
   hasMorePartes: boolean;
   
-  // Ações
+  // 🎮 Ações de Streaming
   selectGrupo: (grupoId: string) => Promise<void>;
   loadNextParte: () => Promise<void>;
   reloadIndex: () => Promise<void>;
+  enrichSeries: (seriesName: string) => EnrichedSeries | null;
   
-  // Estatísticas
+  // 🛡️ Área Administrativa (Upload & Preview)
+  previewContent: PreviewData | null;
+  setPreviewContent: (data: PreviewData | null) => void;
+  publishContent: () => Promise<void>;
+  hasUnpublished: boolean;
+  
+  // 📊 Estatísticas
   stats: {
     partesCarregadas: number;
     totalItens: number;
     memoriaEmCache: string;
-  };
-
-  // Métodos extras para compatibilidade
-  metadata: {
-    totalMovies: number;
-    totalSeries: number;
-    totalEpisodes: number;
-    lastUpdated: string;
   };
 }
 
 const ContentContext = createContext<ContentContextType | null>(null);
 
 export const ContentProvider = ({ children }: { children: ReactNode }) => {
-  // Estado do índice
+  const { toast } = useToast();
+
+  // --- Estados Principais ---
   const [indexLoaded, setIndexLoaded] = useState(false);
   const [indexVersion, setIndexVersion] = useState(0);
   const [grupos, setGrupos] = useState<Grupo[]>([]);
   const [loadingIndex, setLoadingIndex] = useState(false);
 
-  // Estado do grupo atual
+  // --- Estado de Paginação (Infinito) ---
   const [currentGrupo, setCurrentGrupo] = useState<string | null>(null);
   const [currentParte, setCurrentParte] = useState(0);
-  const [items, setItems] = useState<M3UItem[]>([]);
+  const [items, setItems] = useState<M3UItem[]>([]); // Lista "flat" atual
   const [loadingParte, setLoadingParte] = useState(false);
   const [totalPartes, setTotalPartes] = useState(0);
 
-  /**
-   * ✅ Computed properties para compatibilidade
-   */
-  const publishedMovies = useMemo(() => 
-    items.filter(item => item.source === 'movie'),
-    [items]
-  );
-
-  const publishedSeries = useMemo(() => 
-    items.filter(item => item.source === 'series'),
-    [items]
-  );
-
-  const publishedContent = useMemo(() => items, [items]);
-
-  const metadata = useMemo(() => ({
-    totalMovies: publishedMovies.length,
-    totalSeries: publishedSeries.length,
-    totalEpisodes: publishedSeries.length,
-    lastUpdated: new Date().toISOString()
-  }), [publishedMovies, publishedSeries]);
+  // --- Estado do Admin (Preview) ---
+  const [previewContent, setPreviewContent] = useState<PreviewData | null>(null);
 
   /**
    * 📥 Carregar índice no mount
@@ -97,19 +96,6 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
     loadIndex();
   }, []);
 
-  /**
-   * 📥 Auto-carregar grupo 'filmes' após índice estar pronto
-   */
-  useEffect(() => {
-    if (indexLoaded && !currentGrupo) {
-      // Carregar automaticamente o grupo 'filmes'
-      selectGrupo('filmes');
-    }
-  }, [indexLoaded, currentGrupo]);
-
-  /**
-   * 📥 Função para carregar índice
-   */
   const loadIndex = async () => {
     setLoadingIndex(true);
     try {
@@ -124,86 +110,164 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
       
       setIndexVersion(index.version);
       setIndexLoaded(true);
-      
-      console.log('✅ [CONTEXT] Índice carregado com sucesso');
     } catch (error: any) {
       console.error('❌ [CONTEXT] Erro ao carregar índice:', error);
+      toast({ title: "Erro de conexão", description: "Não foi possível carregar o catálogo.", variant: "destructive" });
     } finally {
       setLoadingIndex(false);
     }
   };
 
   /**
-   * 🎯 Selecionar grupo
+   * 🎯 Selecionar grupo (Filmes, Séries, Canais)
    */
   const selectGrupo = useCallback(async (grupoId: string) => {
     if (currentGrupo === grupoId) return;
 
-    console.log(`🎯 [CONTEXT] Selecionando grupo: ${grupoId}`);
+    console.log(`🎯 [CONTEXT] Trocando para grupo: ${grupoId}`);
     
-    // Limpar estado anterior
+    // Resetar visualização
     setItems([]);
     setCurrentParte(0);
     setCurrentGrupo(grupoId);
     
-    // Descobrir total de partes
     const grupo = grupos.find(g => g.id === grupoId);
     setTotalPartes(grupo?.totalPartes || 0);
 
-    // Carregar primeira parte
     setLoadingParte(true);
     try {
       const parteItems = await playlistLoader.loadParte(grupoId, 0);
       setItems(parteItems);
-      console.log(`✅ [CONTEXT] Primeira parte carregada: ${parteItems.length} itens`);
-    } catch (error: any) {
-      console.error('❌ [CONTEXT] Erro ao carregar primeira parte:', error);
+    } catch (error) {
+      console.error('❌ Erro ao carregar grupo:', error);
     } finally {
       setLoadingParte(false);
     }
   }, [currentGrupo, grupos]);
 
   /**
-   * ➕ Carregar próxima parte
+   * ➕ Carregar próxima parte (Scroll Infinito)
    */
   const loadNextParte = useCallback(async () => {
     if (!currentGrupo || loadingParte) return;
     
     const nextParte = currentParte + 1;
-    
-    if (nextParte >= totalPartes) {
-      console.log('ℹ️ [CONTEXT] Não há mais partes para carregar');
-      return;
-    }
+    if (nextParte >= totalPartes) return;
 
     console.log(`➕ [CONTEXT] Carregando parte ${nextParte + 1}/${totalPartes}...`);
     
     setLoadingParte(true);
     try {
       const parteItems = await playlistLoader.loadParte(currentGrupo, nextParte);
-      
       setItems(prev => [...prev, ...parteItems]);
       setCurrentParte(nextParte);
-      
-      console.log(`✅ [CONTEXT] Parte ${nextParte + 1} carregada: ${parteItems.length} itens`);
-    } catch (error: any) {
-      console.error('❌ [CONTEXT] Erro ao carregar próxima parte:', error);
+    } catch (error) {
+      console.error('❌ Erro ao carregar parte:', error);
     } finally {
       setLoadingParte(false);
     }
   }, [currentGrupo, currentParte, totalPartes, loadingParte]);
 
   /**
-   * 🔄 Recarregar índice
+   * 🔄 Recarregar (usado após publicação)
    */
   const reloadIndex = useCallback(async () => {
     playlistLoader.clearAllCache();
     await loadIndex();
-  }, []);
+    // Se estiver em um grupo, recarregar ele também
+    if (currentGrupo) {
+      const gId = currentGrupo;
+      setCurrentGrupo(null); // Forçar reset
+      setTimeout(() => selectGrupo(gId), 100);
+    }
+  }, [currentGrupo, selectGrupo]);
+
+  // --- Lógica de Derivação (Getters) ---
+
+  // Filtra filmes da lista atual carregada
+  const publishedMovies = useMemo(() => {
+    // Se o grupo atual for de séries, retorna vazio, se for misto ou filmes, filtra.
+    return items.filter(i => !i.series);
+  }, [items]);
+
+  // Agrupa séries da lista atual carregada (Transforma Flat em Enriched)
+  const publishedSeries = useMemo(() => {
+    const seriesMap = new Map<string, EnrichedSeries>();
+    
+    items.filter(i => i.series).forEach(item => {
+        if (!item.series) return;
+        const name = item.series;
+        
+        if (!seriesMap.has(name)) {
+            seriesMap.set(name, {
+                seriesName: name,
+                normalizedName: encodeURIComponent(name),
+                poster: item.image,
+                backdrop: item.image, // Fallback
+                totalSeasons: 0,
+                totalEpisodes: 0,
+                episodes: [],
+                seasons: {}
+            });
+        }
+        
+        const entry = seriesMap.get(name)!;
+        entry.episodes.push(item);
+        entry.totalEpisodes++;
+        
+        // Extrair temporada (ex: S01E01 -> 1)
+        // Isso depende de como o worker processou, vamos assumir que item.groupTitle tem a info ou parsear do titulo
+        // Por simplificação, vamos assumir temporada 1 se não achar
+        const seasonMatch = item.title.match(/S(\d+)E\d+/i);
+        const season = seasonMatch ? parseInt(seasonMatch[1]) : 1;
+        
+        if (!entry.seasons[season]) entry.seasons[season] = [];
+        entry.seasons[season].push(item);
+        
+        // Atualizar contagem de temporadas
+        entry.totalSeasons = Object.keys(entry.seasons).length;
+    });
+
+    return Array.from(seriesMap.values());
+  }, [items]);
 
   /**
-   * 📊 Estatísticas
+   * 🎬 Helper para detalhes da série
    */
+  const enrichSeries = useCallback((seriesName: string): EnrichedSeries | null => {
+    // Tenta achar na lista já processada
+    const found = publishedSeries.find(s => s.seriesName === seriesName || s.normalizedName === seriesName);
+    if (found) return found;
+
+    // Se não estiver na lista (ex: acessou link direto e a paginação ainda não carregou a série),
+    // Idealmente aqui buscaríamos no servidor/cache específico.
+    // Por enquanto, retorna null.
+    return null;
+  }, [publishedSeries]);
+
+  // --- Lógica Administrativa (Firebase) ---
+
+  const publishContent = async () => {
+    if (!previewContent) return;
+
+    // TODO: Aqui entra a chamada real para o Firebase Storage/Firestore
+    // 1. Upload do JSON gerado para o Storage
+    // 2. Atualização do índice no Firestore
+    
+    console.log("🔥 [FIREBASE] Publicando conteúdo...", previewContent);
+    
+    // Simulação de delay de rede
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Limpar preview
+    setPreviewContent(null);
+    
+    // Recarregar app para mostrar novos dados
+    await reloadIndex();
+  };
+
+  const hasUnpublished = !!previewContent;
+
   const stats = {
     partesCarregadas: currentParte + 1,
     totalItens: items.length,
@@ -220,17 +284,28 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
       currentGrupo,
       currentParte,
       items,
+      
+      // Getters compatíveis
       publishedMovies,
       publishedSeries,
-      publishedContent,
+      
       loadingIndex,
       loadingParte,
+      isLoading: loadingIndex || loadingParte,
       hasMorePartes,
+      
       selectGrupo,
       loadNextParte,
       reloadIndex,
-      stats,
-      metadata
+      enrichSeries,
+      
+      // Admin
+      previewContent,
+      setPreviewContent,
+      publishContent,
+      hasUnpublished,
+      
+      stats
     }}>
       {children}
     </ContentContext.Provider>

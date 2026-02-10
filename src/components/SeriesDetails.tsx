@@ -1,7 +1,14 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, Play, Plus, ThumbsUp, Volume2, VolumeX } from "lucide-react";
+import {
+  ArrowLeft,
+  Play,
+  Plus,
+  ThumbsUp,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -34,21 +41,40 @@ const SeriesDetails = () => {
   } | null>(null);
   const [isLoadingTMDb, setIsLoadingTMDb] = useState(false);
 
-  // Encontrar a série
+  // 🔍 Decodificar nome da série
+  const decodedSeriesName = decodeURIComponent(seriesName || "");
+  
+  console.log("🔍 Buscando série:", decodedSeriesName);
+  console.log("📚 Séries disponíveis:", publishedSeries.map(s => s.seriesName));
+
+  // Buscar série (case-insensitive)
   const series = publishedSeries.find(
-    (s) => s.normalizedName === decodeURIComponent(seriesName || "")
+    (s) => {
+      const match = s.normalizedName.toLowerCase() === decodedSeriesName.toLowerCase() ||
+                    s.seriesName.toLowerCase() === decodedSeriesName.toLowerCase();
+      
+      if (match) {
+        console.log("✅ Série encontrada:", s.seriesName);
+      }
+      
+      return match;
+    }
   );
 
-  // Buscar dados do TMDb se ainda não tiver
+  // 🎬 Buscar dados do TMDb
   useEffect(() => {
     if (!series || series.tmdbId || isLoadingTMDb) return;
 
     const fetchTMDbData = async () => {
       setIsLoadingTMDb(true);
+      console.log("🎬 Buscando dados TMDb para:", series.seriesName);
+      
       try {
         const results = await tmdb.searchSeriesWithCache(series.seriesName);
         if (results.length > 0) {
           const seriesData = results[0];
+          console.log("✅ Dados TMDb encontrados:", seriesData.name);
+          
           enrichSeries(series, {
             tmdbId: seriesData.id,
             poster: tmdb.getImageUrl(seriesData.poster_path),
@@ -59,7 +85,7 @@ const SeriesDetails = () => {
           });
         }
       } catch (error) {
-        console.error("Erro ao buscar dados do TMDb:", error);
+        console.error("❌ Erro ao buscar TMDb:", error);
       } finally {
         setIsLoadingTMDb(false);
       }
@@ -68,28 +94,49 @@ const SeriesDetails = () => {
     fetchTMDbData();
   }, [series, enrichSeries, isLoadingTMDb]);
 
+  // ❌ Série não encontrada
   if (!series) {
+    console.error("❌ Série não encontrada:", decodedSeriesName);
+    
     return (
       <div className="min-h-screen bg-background">
+        {/* ✅ CORRIGIDO: Sem activeTab e onChangeTab */}
         <DashboardHeader onOpenAdmin={() => setShowAdmin(true)} />
-        <div className="flex min-h-screen items-center justify-center">
-          <div className="text-center">
+        
+        <div className="flex min-h-screen items-center justify-center px-4">
+          <div className="text-center max-w-md">
             <h2 className="mb-4 text-2xl font-bold">Série não encontrada</h2>
-            <Button onClick={() => navigate("/")}>Voltar para o início</Button>
+            <p className="text-muted-foreground mb-4">
+              A série "{decodedSeriesName}" não foi encontrada.
+            </p>
+            <p className="text-sm text-muted-foreground mb-6">
+              Isso pode acontecer se a série não foi publicada ou o link está incorreto.
+            </p>
+            <Button onClick={() => navigate("/series")}>
+              Ver todas as séries
+            </Button>
           </div>
         </div>
       </div>
     );
   }
 
-  // Agrupar episódios por temporada
+  // 🎞️ Agrupar episódios por temporada
   const seasonGroups = groupEpisodesByseason(series.episodes);
   const currentSeasonEpisodes =
     seasonGroups.find((s) => s.season === selectedSeason)?.episodes || [];
 
   const backdropUrl = series.backdrop || series.episodes[0]?.image || "";
 
+  // 🎬 Reproduzir episódio
   const handlePlayEpisode = (episode: any) => {
+    console.log("▶️ Reproduzindo episódio:", episode);
+    
+    if (!episode.url) {
+      console.error("❌ URL do episódio não encontrada");
+      return;
+    }
+
     setPlayerMovie({
       url: episode.url,
       title: `${series.seriesName} - S${String(episode.season).padStart(2, "0")}E${String(episode.episode).padStart(2, "0")}${episode.episodeTitle ? ` - ${episode.episodeTitle}` : ""}`,
@@ -98,10 +145,11 @@ const SeriesDetails = () => {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* ✅ CORRIGIDO: Sem activeTab e onChangeTab */}
       <DashboardHeader onOpenAdmin={() => setShowAdmin(true)} />
 
-      {/* Hero Section */}
-      <div className="relative h-[80vh] w-full overflow-hidden">
+      {/* 🎬 HERO SECTION */}
+      <div className="relative h-[80vh] md:h-[85vh] w-full overflow-hidden">
         {/* Background */}
         <div
           className="absolute inset-0 bg-cover bg-center"
@@ -192,7 +240,7 @@ const SeriesDetails = () => {
         </div>
       </div>
 
-      {/* Episodes Section */}
+      {/* 📺 EPISODES SECTION */}
       <div className="relative z-10 -mt-20 pb-12">
         <div className="container mx-auto px-4 md:px-8">
           <div className="mb-6 flex items-center justify-between">
