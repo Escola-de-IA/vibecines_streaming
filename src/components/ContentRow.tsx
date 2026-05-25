@@ -1,83 +1,96 @@
-import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useRef } from "react";
-import { useNavigate } from "react-router-dom";
-import MovieCard from "./MovieCard";
-
-interface Movie {
-  id: string;
-  title: string;
-  image: string;
-  url?: string;
-}
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useRef } from 'react';
+import { ContentCard } from './ContentCard';
+import { Link } from 'react-router-dom';
 
 interface ContentRowProps {
   title: string;
-  movies: Movie[];
-  onPlay?: (movie: Movie) => void;
-  seeAllHref?: string;
+  items: Array<{ id: string; title: string; logo?: string; group?: string; type: 'movie' | 'series' }>;
+  seeAllTo?: string;
+  limit?: number;
+  showEndCard?: boolean;
+  isContinueWatching?: boolean;
 }
 
-const ContentRow = ({ title, movies, onPlay, seeAllHref }: ContentRowProps) => {
+export function ContentRow({ title, items, seeAllTo, limit = 12, showEndCard = false, isContinueWatching = false }: ContentRowProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const navigate = useNavigate();
+  const visibleItems = items.slice(0, limit);
 
-  if (movies.length === 0) return null;
+  if (visibleItems.length === 0) return null;
 
-  const scroll = (dir: "left" | "right") => {
-    scrollRef.current?.scrollBy({
-      left: dir === "left" ? -300 : 300,
-      behavior: "smooth",
+  const scroll = (direction: 'left' | 'right') => {
+    if (!scrollRef.current) return;
+    const currentY = window.scrollY;
+    const amount = scrollRef.current.clientWidth * 0.85;
+    scrollRef.current.scrollBy({ left: direction === 'left' ? -amount : amount, behavior: 'smooth' });
+    requestAnimationFrame(() => {
+      if (window.scrollY !== currentY) {
+        window.scrollTo({ top: currentY, behavior: 'auto' });
+      }
     });
   };
 
-  return (
-    <div className="mb-10">
-      <div className="flex items-center justify-between mb-4 px-4 md:px-0">
-        <h2 className="text-xl font-bold">{title}</h2>
+  const onArrowClick = (e: React.MouseEvent<HTMLButtonElement>, direction: 'left' | 'right') => {
+    e.preventDefault();
+    e.stopPropagation();
+    scroll(direction);
+  };
 
-        {seeAllHref && (
-          <button
-            onClick={() => navigate(seeAllHref)}
-            className="text-sm text-primary hover:underline"
+  return (
+    <section className="mb-8">
+      <div className="flex items-center justify-between px-4 mb-3 gap-3">
+        {seeAllTo ? (
+          <Link
+            to={seeAllTo}
+            className="text-3xl md:text-4xl font-bold text-foreground hover:text-primary transition-colors"
+            style={{ fontFamily: "'Bebas Neue', sans-serif", letterSpacing: '0.05em' }}
           >
-            Ver tudo
+            {title}
+          </Link>
+        ) : (
+          <h2 className="text-3xl md:text-4xl font-bold text-foreground" style={{ fontFamily: "'Bebas Neue', sans-serif", letterSpacing: '0.05em' }}>
+            {title}
+          </h2>
+        )}
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={(e) => onArrowClick(e, 'left')}
+            className="p-2 rounded-full bg-secondary/70 text-foreground hover:text-primary"
+            aria-label="Anterior"
+          >
+            <ChevronLeft className="w-4 h-4" />
           </button>
+          <button
+            type="button"
+            onClick={(e) => onArrowClick(e, 'right')}
+            className="p-2 rounded-full bg-secondary/70 text-foreground hover:text-primary"
+            aria-label="Próximo"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      <div
+        ref={scrollRef}
+        className="px-4 flex gap-3 md:gap-4 overflow-x-auto scrollbar-hide snap-x snap-mandatory pb-1"
+      >
+        {visibleItems.map(item => (
+          <div key={item.id} className="snap-start flex-shrink-0 w-[42%] sm:w-[30%] md:w-[24%] lg:w-[18%] xl:w-[15%]">
+            <ContentCard {...item} isContinueWatching={isContinueWatching} />
+          </div>
+        ))}
+
+        {showEndCard && seeAllTo && (
+          <Link
+            to={seeAllTo}
+            className="snap-start flex-shrink-0 w-[42%] sm:w-[30%] md:w-[24%] lg:w-[18%] xl:w-[15%] rounded-xl border border-primary/40 bg-primary/10 grid place-items-center text-center p-4 hover:bg-primary/20 transition-colors"
+          >
+            <span className="text-sm font-semibold text-primary">Ver tudo</span>
+          </Link>
         )}
       </div>
-
-      <div className="relative group">
-        <button
-          onClick={() => scroll("left")}
-          className="absolute left-0 top-0 bottom-0 z-10 w-10 bg-gradient-to-r from-background to-transparent opacity-0 group-hover:opacity-100"
-        >
-          <ChevronLeft />
-        </button>
-
-        <div
-          ref={scrollRef}
-          className="flex gap-3 overflow-x-auto px-4 md:px-0"
-        >
-          {movies.map((movie, i) => (
-            <div key={movie.id} className="w-[160px] flex-shrink-0">
-              <MovieCard
-                title={movie.title}
-                image={movie.image}
-                delay={i * 0.03}
-                onPlay={() => onPlay?.(movie)}
-              />
-            </div>
-          ))}
-        </div>
-
-        <button
-          onClick={() => scroll("right")}
-          className="absolute right-0 top-0 bottom-0 z-10 w-10 bg-gradient-to-l from-background to-transparent opacity-0 group-hover:opacity-100"
-        >
-          <ChevronRight />
-        </button>
-      </div>
-    </div>
+    </section>
   );
-};
-
-export default ContentRow;
+}
